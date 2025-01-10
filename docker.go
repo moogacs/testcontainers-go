@@ -308,8 +308,13 @@ func (c *DockerContainer) Stop(ctx context.Context, timeout *time.Duration) erro
 func (c *DockerContainer) Terminate(ctx context.Context, opts ...TerminateOption) error {
 	options := NewTerminateOptions(ctx, opts...)
 	err := c.Stop(options.Context(), options.StopTimeout())
-	if err != nil && !isCleanupSafe(err) {
+	safeCleanup := isCleanupSafe(err)
+	if err != nil && !safeCleanup {
 		return fmt.Errorf("stop: %w", err)
+	}
+
+	if err != nil && safeCleanup && errAlreadyInProgress.MatchString(err.Error()) {
+		return nil
 	}
 
 	select {
