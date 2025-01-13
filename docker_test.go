@@ -293,6 +293,22 @@ func TestContainerStateAfterTermination(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("concurrent termination", func(t *testing.T) {
+		ctx := context.Background()
+		nginx, err := createContainerFn(ctx)
+		require.NoError(t, err)
+		CleanupContainer(t, nginx)
+
+		err = nginx.Start(ctx)
+		require.NoError(t, err, "expected no error from container start.")
+		go func() {
+			require.NoError(t, nginx.Terminate(ctx, StopTimeout(10*time.Second)))
+		}()
+		go func() {
+			require.NoError(t, nginx.Terminate(ctx, StopTimeout(10*time.Second)))
+		}()
+	})
+
 	t.Run("Nil State after termination if raw as already set", func(t *testing.T) {
 		ctx := context.Background()
 		nginx, err := createContainerFn(ctx)
