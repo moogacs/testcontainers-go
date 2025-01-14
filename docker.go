@@ -32,7 +32,6 @@ import (
 	"github.com/docker/go-connections/nat"
 	"github.com/moby/term"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-
 	tcexec "github.com/testcontainers/testcontainers-go/exec"
 	"github.com/testcontainers/testcontainers-go/internal/config"
 	"github.com/testcontainers/testcontainers-go/internal/core"
@@ -65,6 +64,7 @@ var (
 
 // DockerContainer represents a container started using Docker
 type DockerContainer struct {
+	terminationLock sync.Mutex
 	// Container ID from Docker
 	ID           string
 	WaitingFor   wait.Strategy
@@ -306,10 +306,22 @@ func (c *DockerContainer) Stop(ctx context.Context, timeout *time.Duration) erro
 //
 // Default: timeout is 10 seconds.
 func (c *DockerContainer) Terminate(ctx context.Context, opts ...TerminateOption) error {
+	c.terminationLock.Lock()
+	defer c.terminationLock.Unlock()
+
+	if !c.isRunning && c.sessionID == "" {
+		return nil
+	}
+
 	options := NewTerminateOptions(ctx, opts...)
 	err := c.Stop(options.Context(), options.StopTimeout())
-	if err != nil && !isCleanupSafe(err) {
+	safeCleanup := isCleanupSafe(err)
+	if err != nil && !safeCleanup {
 		return fmt.Errorf("stop: %w", err)
+	}
+
+	if err != nil && safeCleanup && errAlreadyInProgress.MatchString(err.Error()) {
+		return nil
 	}
 
 	select {
@@ -618,7 +630,7 @@ func (c *DockerContainer) CopyDirToContainer(ctx context.Context, hostDirPath st
 	}
 
 	if !dir {
-		// it's not a dir: let the consumer to handle an error
+		// it's not a dir: let the consumer handle the error
 		return fmt.Errorf("path %s is not a directory", hostDirPath)
 	}
 

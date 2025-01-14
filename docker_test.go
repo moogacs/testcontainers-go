@@ -24,7 +24,6 @@ import (
 	"github.com/docker/docker/errdefs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	"github.com/testcontainers/testcontainers-go/internal/core"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -291,6 +290,22 @@ func TestContainerStateAfterTermination(t *testing.T) {
 
 		err = nginx.Terminate(ctx, StopTimeout(5*time.Microsecond))
 		require.NoError(t, err)
+	})
+
+	t.Run("concurrent termination", func(t *testing.T) {
+		ctx := context.Background()
+		nginx, err := createContainerFn(ctx)
+		require.NoError(t, err)
+		CleanupContainer(t, nginx)
+
+		err = nginx.Start(ctx)
+		require.NoError(t, err, "expected no error from container start.")
+		go func() {
+			require.NoError(t, nginx.Terminate(ctx, StopTimeout(10*time.Second)))
+		}()
+		go func() {
+			require.NoError(t, nginx.Terminate(ctx, StopTimeout(10*time.Second)))
+		}()
 	})
 
 	t.Run("Nil State after termination if raw as already set", func(t *testing.T) {
@@ -1391,7 +1406,7 @@ func TestDockerContainerCopyDirToContainer(t *testing.T) {
 	CleanupContainer(t, nginxC)
 	require.NoError(t, err)
 
-	p := filepath.Join(".", "testdata", "Dokerfile")
+	p := filepath.Join(".", "testdata", "Dockerfile")
 	err = nginxC.CopyDirToContainer(ctx, p, "/tmp/testdata/Dockerfile", 700)
 	require.Error(t, err) // copying a file using the directory method will raise an error
 
@@ -1870,7 +1885,7 @@ func assertExtractedFiles(t *testing.T, ctx context.Context, container Container
 		}
 
 		fp := filepath.Join(containerFilePath, srcFile.Name())
-		// copy file by file, as there is a limitation in the Docker client to copy an entiry directory from the container
+		// copy file by file, as there is a limitation in the Docker client to copy an entire directory from the container
 		// paths for the container files are using Linux path separators
 		fd, err := container.CopyFileFromContainer(ctx, fp)
 		require.NoError(t, err, "Path not found in container: %s", fp)
